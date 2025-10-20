@@ -126,12 +126,13 @@ export class GitHubAPI {
     title: string,
     head: string,
     base: string,
-    body?: string
+    body?: string,
+    draft?: boolean
   ): Promise<PullRequest> {
-    logger.debug(`Creating PR in ${owner}/${repo}: ${title} (${head} -> ${base})`);
+    logger.debug(`Creating PR in ${owner}/${repo}: ${title} (${head} -> ${base})${draft ? ' (draft)' : ''}`);
     return this.request<PullRequest>(`/repos/${owner}/${repo}/pulls`, {
       method: 'POST',
-      body: { title, head, base, body: body || '' }
+      body: { title, head, base, body: body || '', draft: draft || false }
     });
   }
 

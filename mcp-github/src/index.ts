@@ -195,10 +195,11 @@ server.tool(
     head: z.string().describe("Name of the branch where your changes are (e.g., 'feature-branch')"),
     base: z.string().describe("Name of the branch you want to merge into (e.g., 'main')"),
     body: z.string().optional().describe("Pull request body (markdown)"),
+    draft: z.boolean().optional().describe("Create as draft pull request (default: false)"),
   },
-  async ({ owner, repo, title, head, base, body = "" }) => {
+  async ({ owner, repo, title, head, base, body = "", draft }) => {
     try {
-      const pr = await githubAPI.createPullRequest(owner, repo, title, head, base, body);
+      const pr = await githubAPI.createPullRequest(owner, repo, title, head, base, body, draft);
       return {
         content: [{
           type: "text",
