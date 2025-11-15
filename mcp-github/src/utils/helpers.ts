@@ -18,3 +18,33 @@ export function createGitHubError(status: number, body: unknown): Error {
 export function isTokenValid(token: string): boolean {
   return Boolean(token && token.startsWith('gh') && token.length > 10);
 }
+
+/**
+ * GitHub APIのLinkヘッダーをパースしてページネーション情報を抽出
+ * @param linkHeader - ResponseのLinkヘッダー値
+ * @returns ページネーション情報オブジェクト
+ */
+export function parseLinkHeader(linkHeader: string | null): {
+  next?: string;
+  last?: string;
+  first?: string;
+  prev?: string;
+} {
+  if (!linkHeader) return {};
+
+  const links: Record<string, string> = {};
+  const parts = linkHeader.split(',');
+
+  for (const part of parts) {
+    const [urlPart, relPart] = part.split(';');
+    if (!urlPart || !relPart) continue;
+
+    const url = urlPart.trim().slice(1, -1); // '<url>' -> 'url'
+    const relMatch = relPart.match(/rel="(.+)"/);
+    if (relMatch && relMatch[1]) {
+      links[relMatch[1]] = url;
+    }
+  }
+
+  return links;
+}

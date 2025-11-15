@@ -20,6 +20,9 @@ Claude Code などの MCP 互換クライアントから直接 GitHub ワーク�
 - `update_pull_request` - PRの更新（タイトル、本文、状態、ベースブランチ）
 - `get_pr_diff` - PRの差分（diff）取得
 
+**コミット管理（1ツール）**
+- `get_code_changes_by_date` - 指定期間内のコード変更内容を取得
+
 ### 高度な機能
 - **🔐 シンプル認証**: GitHub CLIによる認証
 - **🏗️ モジュラー設計**: 明確な関心事の分離
@@ -70,7 +73,7 @@ MCP-GitHub/
 ├── .gitignore                   # Git除外設定
 └── mcp-github/                  # サーバー実装
     ├── src/
-    │   ├── index.ts             # MCPサーバーエントリーポイント（8ツール）
+    │   ├── index.ts             # MCPサーバーエントリーポイント（9ツール）
     │   ├── api/
     │   │   ├── github-api.ts    # GitHub REST APIクライアント
     │   │   └── types.ts         # TypeScript型定義

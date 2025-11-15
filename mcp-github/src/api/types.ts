@@ -4,6 +4,12 @@ export interface RequestOptions {
   body?: any;
 }
 
+// ページネーション設定
+export interface PaginationOptions {
+  per_page?: number;  // デフォルト100
+  max_pages?: number; // 最大取得ページ数（無制限の場合はundefined）
+}
+
 // Issue関連の型
 export interface Issue {
   number: number;
@@ -120,6 +126,34 @@ export interface Commit {
   };
   html_url: string;
   parents: { sha: string }[];
+  author?: {
+    login: string;
+  } | null;
+}
+
+// コミット詳細レスポンス（filesを含む）
+export interface CommitDetail extends Commit {
+  files?: CommitFile[];
+  stats?: {
+    total: number;
+    additions: number;
+    deletions: number;
+  };
+}
+
+// コミットファイル情報
+export interface CommitFile {
+  sha: string;
+  filename: string;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  changes: number;
+  blob_url: string;
+  raw_url: string;
+  contents_url: string;
+  patch?: string;
+  previous_filename?: string;
 }
 
 export interface GitReference {
@@ -153,6 +187,33 @@ export interface CreateCommitResponse {
     sha: string;
   };
   parents: { url: string; sha: string }[];
+}
+
+// Compare関連の型
+export interface CompareFile {
+  sha: string;
+  filename: string;
+  status: string;
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+}
+
+export interface CompareResponse {
+  url: string;
+  html_url: string;
+  permalink_url: string;
+  diff_url: string;
+  patch_url: string;
+  base_commit: Commit;
+  merge_base_commit: Commit;
+  status: string;
+  ahead_by: number;
+  behind_by: number;
+  total_commits: number;
+  commits: Commit[];
+  files: CompareFile[];
 }
 
 // 認証関連の型

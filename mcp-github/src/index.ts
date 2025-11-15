@@ -355,6 +355,180 @@ server.tool(
 );
 
 /* ================================================================== */
+/*  Commit Tools (1 tool)                                             */
+/* ================================================================== */
+
+/* ---------- 9. get_code_changes_by_date ---------- */
+server.tool(
+  "get_code_changes_by_date",
+  "Get code changes in a repository within a specified date range, optionally filtered by author",
+  {
+    owner: z.string().describe("Repository owner (e.g., 'Takatoshi-Miura')"),
+    repo: z.string().describe("Repository name (e.g., 'SportsNote_iOS')"),
+    since: z.string().describe("Start date in ISO 8601 format (e.g., '2025-01-01' or '2025-01-01T00:00:00Z')"),
+    until: z.string().optional().describe("End date in ISO 8601 format (optional, defaults to now)"),
+    author: z.string().optional().describe("Filter commits by author (GitHub username or email address)"),
+  },
+  async ({ owner, repo, since, until, author }) => {
+    try {
+      logger.info(`Fetching commits for ${owner}/${repo} from ${since}${until ? ` to ${until}` : ''}${author ? ` by ${author}` : ''}`);
+
+      // フェーズ1: ページネーション対応でコミット一覧を取得（authorフィルタ付き）
+      const commits = await githubAPI.getCommitsByDateRange(
+        owner,
+        repo,
+        since,
+        until,
+        author,
+        { per_page: 100 } // 最大100件/ページ、全ページ取得
+      );
+
+      if (commits.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: `ℹ️ No commits found in ${owner}/${repo} from ${since}${until ? ` to ${until}` : ''}${author ? ` by ${author}` : ''}`
+          }],
+        };
+      }
+
+      logger.info(`Retrieved ${commits.length} commits. Fetching file changes for each commit...`);
+
+      // フェーズ2: 各コミットの詳細情報を並列取得（レート制限考慮）
+      const BATCH_SIZE = 10; // 一度に10コミットずつ処理
+      const commitDetails: any[] = [];
+
+      for (let i = 0; i < commits.length; i += BATCH_SIZE) {
+        const batch = commits.slice(i, i + BATCH_SIZE);
+        logger.debug(`Fetching commit details batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(commits.length / BATCH_SIZE)}`);
+
+        const batchDetails = await Promise.all(
+          batch.map(async commit => {
+            try {
+              return await githubAPI.getCommit(owner, repo, commit.sha);
+            } catch (error) {
+              logger.warn(`Failed to fetch commit ${commit.sha}: ${error}`);
+              // エラー時は基本情報のみ返す（filesなし）
+              return { ...commit, files: [] };
+            }
+          })
+        );
+
+        commitDetails.push(...batchDetails);
+
+        // レート制限対策: バッチ間で少し待機（最後のバッチを除く）
+        if (i + BATCH_SIZE < commits.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      logger.info(`Retrieved file changes for all ${commitDetails.length} commits`);
+
+      // フェーズ3: ファイル変更の集計
+      const fileChangesMap = new Map<string, {
+        additions: number;
+        deletions: number;
+        changes: number;
+        status: Set<string>;
+      }>();
+
+      let totalAdditions = 0;
+      let totalDeletions = 0;
+      let totalChanges = 0;
+
+      for (const detail of commitDetails) {
+        if (!detail.files) continue;
+
+        for (const file of detail.files) {
+          totalAdditions += file.additions;
+          totalDeletions += file.deletions;
+          totalChanges += file.changes;
+
+          const existing = fileChangesMap.get(file.filename);
+          if (existing) {
+            existing.additions += file.additions;
+            existing.deletions += file.deletions;
+            existing.changes += file.changes;
+            existing.status.add(file.status);
+          } else {
+            fileChangesMap.set(file.filename, {
+              additions: file.additions,
+              deletions: file.deletions,
+              changes: file.changes,
+              status: new Set([file.status])
+            });
+          }
+        }
+      }
+
+      // フェーズ4: レスポンスの構築
+      const filesArray = Array.from(fileChangesMap.entries()).map(([filename, stats]) => ({
+        filename,
+        ...stats,
+        status: Array.from(stats.status).join(', ')
+      })).sort((a, b) => b.changes - a.changes); // 変更量順にソート
+
+      let text = `📊 Code Changes in ${owner}/${repo}\n\n`;
+      text += `Period: ${since}${until ? ` to ${until}` : ' to now'}\n`;
+      if (author) {
+        text += `Author: ${author}\n`;
+      }
+      text += `Commits: ${commits.length}\n`;
+      text += `Files Changed: ${fileChangesMap.size}\n`;
+      text += `Total Changes: ${totalChanges} lines\n`;
+      text += `  Additions: +${totalAdditions} lines\n`;
+      text += `  Deletions: -${totalDeletions} lines\n\n`;
+
+      if (filesArray.length > 0) {
+        text += `---\n📝 Changed Files (sorted by change volume):\n\n`;
+
+        // 上位50ファイルのみ表示（長すぎる場合）
+        const displayLimit = 50;
+        const displayFiles = filesArray.slice(0, displayLimit);
+
+        displayFiles.forEach((file, index) => {
+          text += `${index + 1}. ${file.filename}\n`;
+          text += `   Status: ${file.status} | Changes: ${file.changes} (+${file.additions} -${file.deletions})\n`;
+        });
+
+        if (filesArray.length > displayLimit) {
+          text += `\n... and ${filesArray.length - displayLimit} more files\n`;
+        }
+      }
+
+      // コミット一覧（最新10件）
+      text += `\n---\n📜 Recent Commits (latest 10):\n\n`;
+      const recentCommits = commits.slice(0, 10);
+      recentCommits.forEach((commit, index) => {
+        const date = new Date(commit.commit.author.date).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+        const message = commit.commit.message.split('\n')[0]; // 最初の行のみ
+        text += `${index + 1}. ${commit.sha.substring(0, 7)} - ${message}\n`;
+        text += `   Author: ${commit.commit.author.name} | Date: ${date}\n`;
+      });
+
+      if (commits.length > 10) {
+        text += `\n... and ${commits.length - 10} more commits\n`;
+      }
+
+      return {
+        content: [{
+          type: "text",
+          text
+        }],
+      };
+    } catch (error) {
+      logger.error('Failed to get code changes:', error);
+      return {
+        content: [{
+          type: "text",
+          text: `❌ Error getting code changes: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }],
+      };
+    }
+  }
+);
+
+/* ================================================================== */
 /*  Main                                                              */
 /* ================================================================== */
 async function main() {
